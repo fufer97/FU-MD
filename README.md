@@ -82,7 +82,11 @@ Scripts/build-app.sh dmg      # 出安装包
 xattr -d com.apple.quarantine "build/FU MD.app"
 ```
 
-编辑器内核已随仓库提供，克隆下来直接就能构建，不需要联网。需要升级 Vditor 时再跑 `Scripts/fetch-vditor.sh`，并同步更新 [`docs/04-开源合规/第三方组件与许可.md`](docs/04-开源合规/第三方组件与许可.md)。
+编辑器内核已随仓库提供，克隆下来直接就能构建，不需要联网。需要升级 Vditor 时再跑 `Scripts/fetch-vditor.sh`，并同步更新 [docs/04-开源合规/第三方组件与许可.md](docs/04-开源合规/第三方组件与许可.md)。
+
+### 关于代码签名（关系到系统授权）
+
+打包时优先用自签身份 `FU MD Self-Signed` 签名（可用 `FUMD_SIGN_IDENTITY` 覆盖），找不到该证书才回退 ad-hoc 并打印提示。这不是为了分发，而是为了**让 macOS 记住文件夹授权**：ad-hoc 签名没有稳定身份，系统把「访问文稿文件夹」的授权记在单次构建的指纹上，每次重建都会重新问一遍；换成固定证书后签名要求变成 `identifier + certificate root`，跨重建不变，授权一次即可长期有效。证书创建与核对方法见 [docs/02-项目文档](docs/02-项目文档/FU-MD-项目文档.md) 的「7.5 代码签名与系统授权」。
 
 ## 目录结构
 
@@ -109,7 +113,7 @@ FU-MD/
 
 ## 版本
 
-版本号单一来源：`Sources/FUMD/AppVersion.swift`。当前 **0.1.4**。
+版本号单一来源：`Sources/FUMD/AppVersion.swift`。当前 **0.1.5**。
 
 ## 许可证
 

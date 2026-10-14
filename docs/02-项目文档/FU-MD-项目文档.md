@@ -2,7 +2,7 @@
 
 > 轻量级 macOS Markdown 编辑器 · Typora 式真·所见即所得即时渲染
 >
-> 文档版本：v0.1.6 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
+> 文档版本：v0.1.7 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
 >
 > 适用范围：FU MD 的维护者与二次开发者。使用说明见仓库根 [README.md](../../README.md)。
 
@@ -386,6 +386,53 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 
 打开项目自带的 `Sample.md`，覆盖验证：标题/列表/任务列表/表格/代码高亮/引用/行内与独立公式/链接/脚注的即时渲染，以及大纲收集、字数统计、明暗切换与导出。
 
+### 7.5 代码签名与系统授权
+
+**为什么需要稳定签名身份。** macOS 保护「桌面 / 文稿 / 下载」三个目录：应用要读其中的 `.md`，系统会弹窗问一次并记住这次授权。这条记录绑定在应用的**代码签名要求（designated requirement）**上：
+
+| 签名方式 | 签名要求 | 重建后 |
+| --- | --- | --- |
+| ad-hoc（`codesign -s -`） | 这一次构建的哈希（`cdhash`） | **变了** → 系统当成新应用，文件夹授权重新询问 |
+| 自签证书 | `identifier "com.fumd.editor" and certificate root = H"…"` | **不变** → 授权一次长期有效 |
+
+本项目历史上用 ad-hoc 签名，加上开发期频繁重建，于是每次重建后第一次打开文档都会被重新询问「访问文稿文件夹」。现在改为优先用自签身份（`Scripts/build-app.sh`，身份名可用 `FUMD_SIGN_IDENTITY` 覆盖），找不到证书才回退 ad-hoc 并打印提示。
+
+**一次性创建自签证书**（在登录钥匙串里生成，不需要 Apple 开发者账号）：
+
+```bash
+mkdir -p /tmp/fumd-sign && cat > /tmp/fumd-sign/codesign.cnf <<'EOF'
+[req]
+distinguished_name = dn
+prompt = no
+x509_extensions = codesign_ext
+
+[dn]
+CN = FU MD Self-Signed
+O = FU MD
+C = CN
+
+[codesign_ext]
+keyUsage = critical,digitalSignature
+extendedKeyUsage = critical,codeSigning
+basicConstraints = critical,CA:FALSE
+EOF
+
+openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+  -keyout /tmp/fumd-sign/key.pem -out /tmp/fumd-sign/cert.pem -config /tmp/fumd-sign/codesign.cnf
+openssl pkcs12 -export -out /tmp/fumd-sign/identity.p12 -inkey /tmp/fumd-sign/key.pem \
+  -in /tmp/fumd-sign/cert.pem -passout pass:fumd -name "FU MD Self-Signed"
+security import /tmp/fumd-sign/identity.p12 -k ~/Library/Keychains/login.keychain-db \
+  -P fumd -T /usr/bin/codesign -A
+```
+
+**核对签名要求**（应输出基于证书根的要求，而不是 `cdhash`）：
+
+```bash
+codesign -d -r- "build/FU MD.app"
+```
+
+**已知边界**：自签证书不被系统信任，Gatekeeper 仍把应用视为「未经公证的开发者」；应用不在隔离状态（没有 `com.apple.quarantine` 属性）时不弹 Gatekeeper 提示，因此不影响本机使用。如果要做到「完全没有提示」并对外分发，需要 Apple Developer ID 签名 + 公证。另外授权是按目录给的：换证书、换机器或换到新的受保护目录，都需要重新授权一次。
+
 ---
 
 ## 8. 开发过程中解决的问题
@@ -405,6 +452,7 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 | 11 | **导出的公式是 LaTeX 源码、没有排版**（2026-10-15 实测发现）：`vditor.getHTML()` 对公式只给出 `<span\|div class="language-math">` 容器与原始源码，导出文件里 `class="katex"` 出现 0 次；编辑器内显示正常，说明缺的是导出链路上的一次 KaTeX 排版 | `editor.js` 在 `getHtml()` 返回前，对正文里的 `.language-math` 节点跑一遍全局 `katex.render`（按 `span` / `div` 区分行内与独立公式，渲染失败保留原始源码）；`index.html` 显式加载 `katex.min.js`，不再依赖 Vditor 的按需加载。验证：导出 HTML 的 `class="katex"` 由 0 变为 7，PDF 中行内公式 `E = mc²` 与独立公式积分均正确排版 |
 | 12 | **窗口不可见时，关闭导出面板会连带退出应用**（2026-10-15 实测发现）：带文件启动时编辑器窗口曾处于 `onscreen=false` 的不可见状态，导出面板因此成了唯一可见窗口，面板一关闭（保存与取消都算）就触发退出；HTML 导出是面板返回后同步写盘尚能完成，PDF 导出在面板关闭后才开始异步渲染，进程被回收即拿不到文件 | `Info.plist` 补上 `NSQuitAlwaysKeepsWindows=false`（不恢复出不可见窗口）与 `NSDisableAutomaticTermination=true`（窗口都不可见时也不被系统自动终止），与 FU ToDo 的做法一致。验证：同一启动条件下窗口恢复可见（`onscreen=true`），导出面板关闭后应用存活，HTML 与 PDF 均正常落盘 |
 | 13 | **Finder 双击 `.md` 打不开、窗口是空的**（2026-10-15 用户报障 + 日志定位）：由文档启动时 SwiftUI 把窗口创建出来却**从不置前**，窗口从 onAppear 起 `isVisible=false`、`isMiniaturized=false`、未被遮挡，且 `NSApp.windows` 里能看到它；文件其实已经加载成功（窗口标题已变成文件名），只是窗口不显示，用户只看到菜单栏切到 FU MD | 先用临时诊断日志（写 `/tmp/fumd-diag.log`，排查后已移除）确认，再在 `DocumentStore.load(url:)` 成功后调用新增的 `OpenCoordinator.bringToFront(store:)`，**只把装着该文档的窗口** `makeKeyAndOrderFront` + 激活（带重试，空窗口不动）。验证：双击路径下只有文档窗口可见（`onscreen=true`、标题 `Sample.md`、正文渲染完整 字数 180 / 字符 397），不再多弹空的「未命名」；不带文件启动与「运行中再打开文件」两条路径均正常 |
+| 14 | **每次打开文稿里的文档都被重新询问「访问文稿文件夹」**（2026-10-15 用户报障）：ad-hoc 签名没有稳定身份，系统把授权记在单次构建的 `cdhash` 上；开发期每次重建都会让系统把它当成新应用，于是授权失效、再次弹窗 | `Scripts/build-app.sh` 改为优先用自签证书「FU MD Self-Signed」签名，签名要求变成 `identifier + certificate root`、跨重建不变；找不到证书时回退 ad-hoc 并打印提示。证书创建与核对方法见 7.5 节 |
 
 ---
 
@@ -444,6 +492,7 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 
 | 版本 | 日期 | 变更点 | 影响范围 |
 | --- | --- | --- | --- |
+| v0.1.7 | 2026-10-15 | 改用稳定自签身份签名，避免每次重建后重新询问「访问文稿文件夹」；新增 7.5 节说明签名与系统授权（随应用 **0.1.5** 发布） | 构建脚本（6.8 节）、构建与使用指南（7.5 节）、踩坑记录（第 8 节第 14 条） |
 | v0.1.6 | 2026-10-15 | 双击打开窗口不显示的修复改为「只前置装着文档的窗口」：`DocumentStore.load` 调用新增的 `OpenCoordinator.bringToFront(store:)`，避免连空窗口一起弹出来（随应用 **0.1.4** 发布） | 各模块实现（6.3、6.4 节）、踩坑记录（第 8 节第 13 条） |
 | v0.1.5 | 2026-10-15 | 修复 Finder 双击 `.md` 时窗口不显示（由文档启动时 SwiftUI 不把窗口置前）：`WindowConfigurator` 补一次显式前置（随应用 **0.1.3** 发布；副作用是多弹一个空的「未命名」窗口，已被 0.1.4 取代） | 各模块实现（6.1 节）、踩坑记录（第 8 节第 13 条） |
 | v0.1.4 | 2026-10-15 | 修复窗口不可见时关闭导出面板会退出应用：`Info.plist` 补 `NSQuitAlwaysKeepsWindows=false` 与 `NSDisableAutomaticTermination=true`（随应用 **0.1.2** 发布） | 构建脚本（6.8 节）、踩坑记录（第 8 节第 12 条）、已知限制（9.1 节） |

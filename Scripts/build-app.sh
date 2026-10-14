@@ -98,7 +98,22 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force -s - "$APP"
+# 代码签名：优先用稳定的自签身份，找不到才回退 ad-hoc。
+#
+# 为什么重要：ad-hoc 签名没有稳定身份，macOS 会把「访问文稿/桌面文件夹」这类授权
+# 记在**这一次构建的指纹**上，于是每次重建都会重新问用户一遍；改用同一张自签证书后，
+# 签名要求变成「identifier + 证书根」，跨重建保持不变，授权一次就长期有效。
+# 自定义身份：FUMD_SIGN_IDENTITY="你的证书名" Scripts/build-app.sh
+SIGN_IDENTITY="${FUMD_SIGN_IDENTITY:-FU MD Self-Signed}"
+if security find-certificate -c "$SIGN_IDENTITY" >/dev/null 2>&1 \
+   && codesign --force --sign "$SIGN_IDENTITY" "$APP" 2>/dev/null; then
+  echo "🔏 签名身份：${SIGN_IDENTITY}（文件夹授权可跨重建保留）"
+else
+  codesign --force -s - "$APP"
+  echo "⚠️ 未找到签名身份「${SIGN_IDENTITY}」，本次回退 ad-hoc"
+  echo "   系统会把这份构建当成新应用，可能重新询问「访问文稿文件夹」；"
+  echo "   创建自签证书的方法见 docs/02-项目文档「7.5 代码签名与系统授权」。"
+fi
 echo "✅ $APP"
 du -sh "$APP"
 
