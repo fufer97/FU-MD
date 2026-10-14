@@ -14,6 +14,8 @@
 <body>
 <div id="editor"></div>
 <script src="vditor/dist/index.min.js"></script>
+<!-- 显式加载 KaTeX：导出时要用全局 katex 给公式补排版（不能等 Vditor 按需加载） -->
+<script src="vditor/dist/js/katex/katex.min.js"></script>
 <script src="editor.js"></script>
 </body>
 </html>

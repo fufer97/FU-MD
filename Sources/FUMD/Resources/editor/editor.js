@@ -64,6 +64,25 @@
     }
   }
 
+  // Vditor 的 getHTML() 对公式只给出原始源码（<span|div class="language-math">），
+  // 导出的 HTML/PDF 里因此显示的是 LaTeX 源码。导出前在这里用全局 katex 补一次排版，
+  // 行内/独立公式按节点是 span 还是 div 区分；渲染失败就保留原始源码，不阻断导出。
+  function renderMath(html) {
+    if (!html || typeof katex === 'undefined') return html;
+    var box = document.createElement('div');
+    box.innerHTML = html;
+    var nodes = box.querySelectorAll('.language-math');
+    if (!nodes.length) return html;
+    nodes.forEach(function (node) {
+      var source = (node.textContent || '').trim();
+      if (!source) return;
+      try {
+        katex.render(source, node, { displayMode: node.tagName === 'DIV', throwOnError: false });
+      } catch (e) { /* 保留原始源码 */ }
+    });
+    return box.innerHTML;
+  }
+
   window.FUMDBridge = {
     init: function (payload) {
       if (typeof payload === 'string') {
@@ -107,7 +126,7 @@
       return vditor ? vditor.getValue() : '';
     },
     getHtml: function () {
-      return vditor ? vditor.getHTML() : '';
+      return vditor ? renderMath(vditor.getHTML()) : '';
     },
     setTheme: function (isDark) {
       applyTheme(!!isDark);
