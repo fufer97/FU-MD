@@ -1,0 +1,10 @@
+# 构建产物
+.build/
+build/
+*.dmg
+
+# 图标生成中间产物（Assets/AppIcon.icns 与 Assets/icon_1024.* 随仓库走）
+Assets/*.iconset/
+
+# 系统垃圾
+.DS_Store
