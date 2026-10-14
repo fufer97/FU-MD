@@ -2,7 +2,7 @@
 
 > 轻量级 macOS Markdown 编辑器 · Typora 式真·所见即所得即时渲染
 >
-> 文档版本：v0.1.1 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
+> 文档版本：v0.1.2 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
 >
 > 适用范围：FU MD 的维护者与二次开发者。使用说明见仓库根 [README.md](../../README.md)。
 
@@ -408,7 +408,9 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 
 ### 9.1 已知限制
 
-- 导出 HTML/PDF 的数学公式依赖内联 KaTeX CSS，特殊字形可能回退为系统字体；Mermaid/公式在 PDF 中为尽力渲染。
+- **导出的数学公式没有排版**（2026-10-15 实测）：`FUMDBridge.getHtml()` 取回的正文里，公式是原始源码——`<span class="language-math">E = mc^2</span>`、`<div class="language-math">\int_{0}^{\infty} e^{-x^2} \, dx = \frac{\sqrt{\pi}}{2}</div>`，全文 `class="katex"` 出现 0 次。编辑器内公式显示正常，说明缺的是导出链路上的一次 KaTeX 渲染；内联进去的 KaTeX CSS 因此没有作用对象。在导出的 HTML 与 PDF 中，公式都显示为 LaTeX 源码。修复方向：`getHtml()` 返回前对正文里的 `.language-math` 节点跑一遍 KaTeX（按 `span` / `div` 区分行内与独立公式），或改用能达到同样效果的 Vditor 渲染接口。
+- **窗口不可见时，关闭导出面板会连带退出应用**（2026-10-15 实测）：`AppDelegate.applicationShouldTerminateAfterLastWindowClosed(_:)` 返回 `true`；当编辑器窗口处于不可见状态（实测带文件启动时窗口 `onscreen=false`：`open -a "FU MD.app" Sample.md`）时，导出面板成了唯一可见窗口，面板一关闭（**保存与取消都算**）即触发退出。HTML 导出是面板返回后同步写盘，不受影响；PDF 导出在面板关闭后才开始异步渲染，会随进程被切断而拿不到文件。对照 FU ToDo 的 `Info.plist`，它设了 `NSDisableAutomaticTermination` 与 `NSQuitAlwaysKeepsWindows=false`，本项目两者都没有。
+- 导出的 HTML 内联 KaTeX 字体时用的是相对路径（`url(fonts/KaTeX_*.woff2)`），文件被移动或单独分享后公式字体可能回退为系统字体。
 - ad-hoc 签名，首次启动需移除 quarantine 属性。
 - 大纲仅收集标题，不支持拖拽调序。
 - 内核已裁剪至约 11MB（原发行包约 23MB）；若要继续减小体积，需要评估 KaTeX 字体子集与 i18n 语言包的精简空间。
@@ -440,5 +442,6 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 
 | 版本 | 日期 | 变更点 | 影响范围 |
 | --- | --- | --- | --- |
+| v0.1.2 | 2026-10-15 | 补入导出功能的实测结论：导出 HTML/PDF 中公式未排版（原始 LaTeX）、窗口不可见时关闭导出面板会退出应用（PDF 导出受影响）、导出字体相对路径问题 | 已知限制（9.1 节） |
 | v0.1.1 | 2026-10-15 | 项目从 TRAE 工作目录迁至 `~/Documents/FU-MD` 并建立 git 仓库；新增 `docs/` 分阶段归档、`LICENSE`、`AppVersion.swift`（版本号单一来源）、`Scripts/release.sh`；`build-app.sh` 增加 dmg 模式与沙箱规避；Vditor 内核钉版 4.0.0 并补齐 MIT 许可正文 | 目录结构（第 4 节）、构建与发版命令（第 7 节）、脚本职责（6.8 节）、许可声明（第 10 节） |
 | v0.1.0 | 2026-10-15 | 首版全量文档：功能、技术选型、架构与桥接协议、各模块实现、踩坑记录 | 全文 |
