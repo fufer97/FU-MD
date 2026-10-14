@@ -77,6 +77,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
     <key>NSHighResolutionCapable</key><true/>
+    <!-- 不恢复上次的窗口：启动时总是先出现主窗口，避免恢复出不可见的窗口 -->
+    <key>NSQuitAlwaysKeepsWindows</key><false/>
+    <!-- 窗口不可见时也不要让系统自动终止应用：导出面板关闭后进程被回收会切断 PDF 的异步渲染 -->
+    <key>NSDisableAutomaticTermination</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>CFBundleDocumentTypes</key>
     <array>

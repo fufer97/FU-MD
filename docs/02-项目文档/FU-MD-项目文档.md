@@ -2,7 +2,7 @@
 
 > 轻量级 macOS Markdown 编辑器 · Typora 式真·所见即所得即时渲染
 >
-> 文档版本：v0.1.3 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
+> 文档版本：v0.1.4 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
 >
 > 适用范围：FU MD 的维护者与二次开发者。使用说明见仓库根 [README.md](../../README.md)。
 
@@ -318,7 +318,7 @@ function computeStats(value) {
 
 | 脚本 | 职责 | 要点 |
 | --- | --- | --- |
-| `build-app.sh` | 打包 .app / dmg | 设 `TMPDIR` 与模块缓存到 `~/.cache/fumd/` 并加 `--disable-sandbox`（绕过 SwiftPM 沙箱限制）→ 拷二进制与资源 bundle → 从 `AppVersion.swift` 取版本写入 Info.plist（含文档关联）→ ad-hoc 签名 → 可选 `hdiutil` 出 dmg |
+| `build-app.sh` | 打包 .app / dmg | 设 `TMPDIR` 与模块缓存到 `~/.cache/fumd/` 并加 `--disable-sandbox`（绕过 SwiftPM 沙箱限制）→ 拷二进制与资源 bundle → 从 `AppVersion.swift` 取版本写入 Info.plist（含文档关联、`NSQuitAlwaysKeepsWindows=false`、`NSDisableAutomaticTermination=true`）→ ad-hoc 签名 → 可选 `hdiutil` 出 dmg |
 | `release.sh` | 一条命令发版 | 改版本号 → 出 dmg → `git` 提交推送 → `gh release create`（附件名预先改成 `FU-MD-<版本>.dmg`，避免 GitHub 把空格换成点） |
 | `fetch-vditor.sh` | 升级内核 | 版本钉在 `VDITOR_VERSION`（当前 4.0.0）；按 `KEEP_JS` 裁剪，保留 MIT 许可正文与版本号文件 |
 | `make-icon.sh` | 生成图标 | `sips` 批量缩放 10 个尺寸 → `iconutil` 合成 icns |
@@ -402,6 +402,7 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 | 9 | JS 桥缺 `focus` 方法导致打开文件后无法自动聚焦 | `FUMDBridge` 补充 `focus()`（调用 `vditor.focus()`） |
 | 10 | **重命名遗漏导致桥接断裂**：Swift 调 `LightMarkBridge.*` 而 JS 只暴露 `FUMDBridge`；JS 发消息用 `messageHandlers.lightmark` 而 Swift 注册的是 `fumd` —— 单向调用全部静默失败 | 全量检索替换，两端通道统一为 `FUMDBridge` / `fumd`，重新构建验证 |
 | 11 | **导出的公式是 LaTeX 源码、没有排版**（2026-10-15 实测发现）：`vditor.getHTML()` 对公式只给出 `<span\|div class="language-math">` 容器与原始源码，导出文件里 `class="katex"` 出现 0 次；编辑器内显示正常，说明缺的是导出链路上的一次 KaTeX 排版 | `editor.js` 在 `getHtml()` 返回前，对正文里的 `.language-math` 节点跑一遍全局 `katex.render`（按 `span` / `div` 区分行内与独立公式，渲染失败保留原始源码）；`index.html` 显式加载 `katex.min.js`，不再依赖 Vditor 的按需加载。验证：导出 HTML 的 `class="katex"` 由 0 变为 7，PDF 中行内公式 `E = mc²` 与独立公式积分均正确排版 |
+| 12 | **窗口不可见时，关闭导出面板会连带退出应用**（2026-10-15 实测发现）：带文件启动时编辑器窗口曾处于 `onscreen=false` 的不可见状态，导出面板因此成了唯一可见窗口，面板一关闭（保存与取消都算）就触发退出；HTML 导出是面板返回后同步写盘尚能完成，PDF 导出在面板关闭后才开始异步渲染，进程被回收即拿不到文件 | `Info.plist` 补上 `NSQuitAlwaysKeepsWindows=false`（不恢复出不可见窗口）与 `NSDisableAutomaticTermination=true`（窗口都不可见时也不被系统自动终止），与 FU ToDo 的做法一致。验证：同一启动条件下窗口恢复可见（`onscreen=true`），导出面板关闭后应用存活，HTML 与 PDF 均正常落盘 |
 
 ---
 
@@ -409,7 +410,6 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 
 ### 9.1 已知限制
 
-- **窗口不可见时，关闭导出面板会连带退出应用**（2026-10-15 实测）：`AppDelegate.applicationShouldTerminateAfterLastWindowClosed(_:)` 返回 `true`；当编辑器窗口处于不可见状态（实测带文件启动时窗口 `onscreen=false`：`open -a "FU MD.app" Sample.md`）时，导出面板成了唯一可见窗口，面板一关闭（**保存与取消都算**）即触发退出。HTML 导出是面板返回后同步写盘，不受影响；PDF 导出在面板关闭后才开始异步渲染，会随进程被切断而拿不到文件。对照 FU ToDo 的 `Info.plist`，它设了 `NSDisableAutomaticTermination` 与 `NSQuitAlwaysKeepsWindows=false`，本项目两者都没有。
 - 导出的 HTML 内联 KaTeX 字体时用的是相对路径（`url(fonts/KaTeX_*.woff2)`），文件被移动或单独分享后公式字体可能回退为系统字体；把导出文件与内核的 `fonts/` 目录一起分发可避免。
 - ad-hoc 签名，首次启动需移除 quarantine 属性。
 - 大纲仅收集标题，不支持拖拽调序。
@@ -442,6 +442,7 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 
 | 版本 | 日期 | 变更点 | 影响范围 |
 | --- | --- | --- | --- |
+| v0.1.4 | 2026-10-15 | 修复窗口不可见时关闭导出面板会退出应用：`Info.plist` 补 `NSQuitAlwaysKeepsWindows=false` 与 `NSDisableAutomaticTermination=true`（随应用 **0.1.2** 发布） | 构建脚本（6.8 节）、踩坑记录（第 8 节第 12 条）、已知限制（9.1 节） |
 | v0.1.3 | 2026-10-15 | 修复导出公式未排版：`editor.js` 的 `getHtml()` 返回前补一次 KaTeX 排版，`index.html` 显式加载 KaTeX（随应用 **0.1.1** 发布） | 各模块实现（6.2 节）、踩坑记录（第 8 节第 11 条）、已知限制（9.1 节） |
 | v0.1.2 | 2026-10-15 | 补入导出功能的实测结论：导出 HTML/PDF 中公式未排版（原始 LaTeX）、窗口不可见时关闭导出面板会退出应用（PDF 导出受影响）、导出字体相对路径问题 | 已知限制（9.1 节） |
 | v0.1.1 | 2026-10-15 | 项目从 TRAE 工作目录迁至 `~/Documents/FU-MD` 并建立 git 仓库；新增 `docs/` 分阶段归档、`LICENSE`、`AppVersion.swift`（版本号单一来源）、`Scripts/release.sh`；`build-app.sh` 增加 dmg 模式与沙箱规避；Vditor 内核钉版 4.0.0 并补齐 MIT 许可正文 | 目录结构（第 4 节）、构建与发版命令（第 7 节）、脚本职责（6.8 节）、许可声明（第 10 节） |
