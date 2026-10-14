@@ -2,7 +2,7 @@
 
 > 轻量级 macOS Markdown 编辑器 · Typora 式真·所见即所得即时渲染
 >
-> 文档版本：v0.1.4 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
+> 文档版本：v0.1.5 ｜ 更新日期：2026-10-15 ｜ 平台：macOS 13+
 >
 > 适用范围：FU MD 的维护者与二次开发者。使用说明见仓库根 [README.md](../../README.md)。
 
@@ -263,7 +263,7 @@ FU-MD/                                   # 家目录：~/Documents/FU-MD
 - `AppDelegate`：实现 `application(_:open:)` 支持 Dock/拖拽打开，转交 `OpenCoordinator`；最后一个窗口关闭即退出应用。
 - `EditorContext`：每窗口持有 `DocumentStore` + `EditorBridge` 并互相引用。
 - `EditorContent`：组装「大纲侧栏（可选）+ 编辑区 + 状态栏」垂直布局；`navigationTitle` 绑定 `store.displayName`（store 以 `@ObservedObject` 放在同一视图层，保证文件名变化即时刷新标题）。
-- `WindowConfigurator`：借一个零尺寸 `NSView` 的 `viewDidMoveToWindow` 时机拿到 `NSWindow`，挂 `CloseGuard`（脏文档关闭确认）并向 `OpenCoordinator` 注册窗口。
+- `WindowConfigurator`：借一个零尺寸 `NSView` 的 `viewDidMoveToWindow` 时机拿到 `NSWindow`，挂 `CloseGuard`（脏文档关闭确认）并向 `OpenCoordinator` 注册窗口；**若此刻窗口 `isVisible == false`，补一次 `makeKeyAndOrderFront(nil)` + `NSApp.activate(ignoringOtherApps: true)`** —— 由文档启动时 SwiftUI 不会自动置前（见第 8 节第 13 条），没有这一步用户双击 `.md` 只会看到菜单栏切过去、没有窗口。
 
 ### 6.2 editor.js — 编辑器初始化与桥接
 
@@ -403,6 +403,7 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 | 10 | **重命名遗漏导致桥接断裂**：Swift 调 `LightMarkBridge.*` 而 JS 只暴露 `FUMDBridge`；JS 发消息用 `messageHandlers.lightmark` 而 Swift 注册的是 `fumd` —— 单向调用全部静默失败 | 全量检索替换，两端通道统一为 `FUMDBridge` / `fumd`，重新构建验证 |
 | 11 | **导出的公式是 LaTeX 源码、没有排版**（2026-10-15 实测发现）：`vditor.getHTML()` 对公式只给出 `<span\|div class="language-math">` 容器与原始源码，导出文件里 `class="katex"` 出现 0 次；编辑器内显示正常，说明缺的是导出链路上的一次 KaTeX 排版 | `editor.js` 在 `getHtml()` 返回前，对正文里的 `.language-math` 节点跑一遍全局 `katex.render`（按 `span` / `div` 区分行内与独立公式，渲染失败保留原始源码）；`index.html` 显式加载 `katex.min.js`，不再依赖 Vditor 的按需加载。验证：导出 HTML 的 `class="katex"` 由 0 变为 7，PDF 中行内公式 `E = mc²` 与独立公式积分均正确排版 |
 | 12 | **窗口不可见时，关闭导出面板会连带退出应用**（2026-10-15 实测发现）：带文件启动时编辑器窗口曾处于 `onscreen=false` 的不可见状态，导出面板因此成了唯一可见窗口，面板一关闭（保存与取消都算）就触发退出；HTML 导出是面板返回后同步写盘尚能完成，PDF 导出在面板关闭后才开始异步渲染，进程被回收即拿不到文件 | `Info.plist` 补上 `NSQuitAlwaysKeepsWindows=false`（不恢复出不可见窗口）与 `NSDisableAutomaticTermination=true`（窗口都不可见时也不被系统自动终止），与 FU ToDo 的做法一致。验证：同一启动条件下窗口恢复可见（`onscreen=true`），导出面板关闭后应用存活，HTML 与 PDF 均正常落盘 |
+| 13 | **Finder 双击 `.md` 打不开、窗口是空的**（2026-10-15 用户报障 + 日志定位）：由文档启动时 SwiftUI 把窗口创建出来却**从不置前**，窗口从 onAppear 起 `isVisible=false`、`isMiniaturized=false`、未被遮挡，且 `NSApp.windows` 里能看到它；文件其实已经加载成功（窗口标题已变成文件名），只是窗口不显示，用户只看到菜单栏切到 FU MD | 诊断日志（临时写入 `/tmp/fumd-diag.log`，排查后已移除）确认后，在 `WindowConfigurator` 拿到窗口时补一次显式前置：窗口不可见才 `makeKeyAndOrderFront(nil)` + `NSApp.activate(ignoringOtherApps: true)`。验证：双击路径下窗口从 2 秒到 15 秒持续 `onscreen=true`，标题 `Sample.md`、正文渲染完整（字数 180 / 字符 397）；不带文件启动的常规路径不受影响 |
 
 ---
 
@@ -442,6 +443,7 @@ xattr -d com.apple.quarantine "build/FU MD.app"
 
 | 版本 | 日期 | 变更点 | 影响范围 |
 | --- | --- | --- | --- |
+| v0.1.5 | 2026-10-15 | 修复 Finder 双击 `.md` 时窗口不显示（由文档启动时 SwiftUI 不把窗口置前）：`WindowConfigurator` 补一次显式前置（随应用 **0.1.3** 发布） | 各模块实现（6.1 节）、踩坑记录（第 8 节第 13 条） |
 | v0.1.4 | 2026-10-15 | 修复窗口不可见时关闭导出面板会退出应用：`Info.plist` 补 `NSQuitAlwaysKeepsWindows=false` 与 `NSDisableAutomaticTermination=true`（随应用 **0.1.2** 发布） | 构建脚本（6.8 节）、踩坑记录（第 8 节第 12 条）、已知限制（9.1 节） |
 | v0.1.3 | 2026-10-15 | 修复导出公式未排版：`editor.js` 的 `getHtml()` 返回前补一次 KaTeX 排版，`index.html` 显式加载 KaTeX（随应用 **0.1.1** 发布） | 各模块实现（6.2 节）、踩坑记录（第 8 节第 11 条）、已知限制（9.1 节） |
 | v0.1.2 | 2026-10-15 | 补入导出功能的实测结论：导出 HTML/PDF 中公式未排版（原始 LaTeX）、窗口不可见时关闭导出面板会退出应用（PDF 导出受影响）、导出字体相对路径问题 | 已知限制（9.1 节） |

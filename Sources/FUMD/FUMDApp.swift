@@ -116,6 +116,14 @@ struct WindowConfigurator: NSViewRepresentable {
             closeGuard.attach(to: window)
             window.delegate = closeGuard
             OpenCoordinator.shared.register(window: window, store: store)
+            // 由文档启动（Finder 双击 / `open foo.md`）时，SwiftUI 会把这个窗口创建出来却不置前，
+            // 窗口的 isVisible 一直是 false：用户只看到菜单栏切到 FU MD，没有窗口出现。
+            // 这里补一次显式前置；正常启动时窗口已经是可见的，不会重复动作。
+            DispatchQueue.main.async {
+                guard !window.isVisible else { return }
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         return view
     }
