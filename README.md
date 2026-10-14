@@ -109,7 +109,7 @@ FU-MD/
 
 ## 版本
 
-版本号单一来源：`Sources/FUMD/AppVersion.swift`。当前 **0.1.0**。
+版本号单一来源：`Sources/FUMD/AppVersion.swift`。当前 **0.1.1**。
 
 ## 许可证
 
