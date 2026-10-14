@@ -46,6 +46,8 @@ final class DocumentStore: ObservableObject {
         bridge?.setValue(content)
         noteRecent(url)
         refreshCandidateState()
+        // 由文档启动时 SwiftUI 不会把窗口置前，这里补一次（只影响装着文档的窗口）
+        OpenCoordinator.shared.bringToFront(store: self)
     }
 
     func newDocument() {
